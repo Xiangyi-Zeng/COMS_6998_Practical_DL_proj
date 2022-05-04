@@ -29,6 +29,7 @@ $(document).ready(async function () {
 
     // Showing all possible results
     function showResults(result) {
+        //console.log(result)
         $('.loader').hide();
         $('#result').fadeIn(600).text(result[0].className + '  -   ' + result[0].probability.toFixed(3));
     }
@@ -53,6 +54,8 @@ $(document).ready(async function () {
         // Make a prediction through the model on our image.
         const imgEl = document.getElementById('imagePreview');
         const result = await net.classify(imgEl);
+
+        console.log(result)
 
         showResults(result);
     });
