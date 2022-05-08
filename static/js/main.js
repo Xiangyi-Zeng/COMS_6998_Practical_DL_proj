@@ -12,7 +12,9 @@ function handleModelChange(){
     }
 
     isModelLoaded = false;
-    $('.image-section').hide()
+    //$('#imagePreview').attr("src", "").hide().fadeIn(650);
+    //$('.image-section').hide()
+    $('#btn-predict').show();
     $('#result').hide()
     $('.loader').hide();
 
@@ -55,7 +57,7 @@ $(document).ready(async function () {
         $('#result').fadeIn(600) //.text(result[0].className + '  -   ' + result[0].probability.toFixed(3));
         for (let idx = 0; idx < results.length; idx++) {
             let item = $("<div id='prediction'></div>")
-            item.html("<p>"+`Prediction: ${results[idx]["className"]} - confidence(${results[idx]["probability"]})`+"</p>")
+            item.html("<p>"+`Prediction: ${results[idx]["className"]} - confidence(${results[idx]["probability"].toFixed(3)})`+"</p>")
             $('#result').append(item)
         }
     }

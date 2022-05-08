@@ -104,3 +104,7 @@ input[type="file"] {
     pointer-events: none;
 }
 
+.change_background {
+    background-color: grey;
+}
+
