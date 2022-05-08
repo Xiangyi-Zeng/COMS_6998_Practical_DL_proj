@@ -12,9 +12,9 @@ function handleModelChange(){
     }
 
     isModelLoaded = false;
-    //$('.image-section').hide()
-    //$('#result').hide()
-    //$('.loader').hide();
+    $('.image-section').hide()
+    $('#result').hide()
+    $('.loader').hide();
 
     console.log(currentModel)
 }
