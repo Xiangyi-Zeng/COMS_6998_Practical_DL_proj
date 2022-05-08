@@ -1,24 +1,30 @@
+let net;
+let isModelLoaded = false;
+var currentModel = null;
+var stopApp = false;
+
+function handleModelChange(){
+    let e = document.getElementById('model-selector');
+    value = e.options[e.selectedIndex].value;
+    if (currentModel != value) {
+        currentModel = value;
+        stopApp=true;
+    }
+
+    isModelLoaded = false;
+    //$('.image-section').hide()
+    //$('#result').hide()
+    //$('.loader').hide();
+
+    console.log(currentModel)
+}
+
 $(document).ready(async function () {
     
     // Init
     $('.image-section').hide();
     $('.loader').hide();
     $('#result').hide();
-
-    let net;
-    let isModelLoaded = false;
-    var currentModel = null;
-
-    function handleModelChange(){
-        let e = document.getElementById('model-selector');
-        value = e.options[e.selectedIndex].value;
-        if (currentModel != value) {
-            currentModel = value;
-            stopApp=true;
-        }
-    }
-    handleModelChange()
-
 
     // Upload Preview
     function readURL(input) {
@@ -27,9 +33,11 @@ $(document).ready(async function () {
             reader.onload = function (e) {
                 $('#imagePreview').attr("src", e.target.result).hide().fadeIn(650);
             }
-            reader.readAsDataURL(input.files[0]);
+            reader.readAsDataURL(input.files[0]); 
         }
     }
+
+    handleModelChange()
 
     $("#imageUpload").change(function () {
 
@@ -55,24 +63,11 @@ $(document).ready(async function () {
     // preprocess input image
     function preprocess(img)
     {
-        /*
-        //convert the image data to a tensor 
-        let resized = tf.browser.fromPixels(img).resizeNearestNeighbor([224, 224]).toFloat()
-        //resize to 50 X 50
-        //const resized = tf.image.resizeNearestNeighbor([224, 224]).toFloat()
-        // Normalize the image 
-        const normalizationOffset = tf.scalar(255);
-        //const normalized = tf.scalar(1.0).sub(resized.div(offset));
-        const normalized = resized.sub(1.0).div(normalizationOffset);
-        //We add a dimension to get a batch shape 
-
-        const batched = normalized.expandDims(0);
-        const batch_img = tf.transpose(batched, [0, 3, 1, 2]);
-        */
         let resized = tf.browser.fromPixels(img)
         img = tf.image.resizeBilinear(resized, [224, 224]).div(tf.scalar(255))
         img = tf.cast(img, dtype = 'float32');
 
+        
         /*mean of natural image*/
         let meanRgb = {  red : 0.485,  green: 0.456,  blue: 0.406 }
 
@@ -85,7 +80,7 @@ $(document).ready(async function () {
                     tf.tensor1d([2], "int32")
         ];
 
-        /* sperating tensor channelwise and applyin normalization to each chanel seperately */
+        /* sperating tensor channelwise and applyin normalization to each chanel seperately*/ 
         let centeredRgb = {
             red: tf.gather(img,indices[0],2)
                     .sub(tf.scalar(meanRgb.red))
@@ -107,6 +102,7 @@ $(document).ready(async function () {
         let processedImg = tf.stack([
             centeredRgb.red, centeredRgb.green, centeredRgb.blue
         ]).expandDims();
+        //let final_image = tf.expandDims(img, 0)
         return processedImg;
         //return batch_img
     }
@@ -152,9 +148,8 @@ $(document).ready(async function () {
         if (isModelLoaded) {
             console.log('Previously loaded');
         } else {
-            $('#result').show().fadeIn(600).text('Resnet model is loading, please wait..');
-            //net = await mobilenet.load();
-            net = await tf.loadGraphModel("/static/models/resnet_pytorch/model.json")
+            $('#result').show().fadeIn(600).text('Model is loading, please wait..');
+            net = await tf.loadGraphModel(currentModel)
             console.log('Model loaded');
             isModelLoaded = true;
         }
@@ -164,7 +159,9 @@ $(document).ready(async function () {
 
         let predictions = await net.predict(preprocess(imgEl));
         predictions = predictions.dataSync();
+        //console.log(predictions)
         topPredictions = getTopKClasses(predictions, 5);
+        console.log(topPredictions)
 
         showResults(topPredictions);
     });
