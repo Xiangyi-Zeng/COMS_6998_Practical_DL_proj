@@ -1,7 +1,5 @@
-import numpy as np
 import torch
 from torch import nn
-from torch import Tensor 
 from torch.nn import functional as F
 from itertools import product     
 
@@ -268,112 +266,6 @@ class PTQSLQuantMatMul(MinMaxQuantMatMul):
         for e in range(self.search_round):
             # search for best A interval
             self._search_best_A_interval(A, B, A_interval_candidates)
-            # search for best B interval
-            self._search_best_B_interval(A, B, B_interval_candidates)
-
-        # put raw data back to cpu
-        self.raw_out = self.raw_out.squeeze(0).to("cpu")
-        self.raw_grad = self.raw_grad.to("cpu") if self.raw_grad != None else None
-
-        # finish calibration and output the result
-        self.calibrated = True
-        del self.raw_input, self.raw_out, self.raw_grad
-        out=self.quant_forward(A,B)
-        return out    
-
-class SoSPTQSLQuantMatMul(PTQSLQuantMatMul):
-    """
-    Sublayerwise PTQ on matmul modules with Split-of-Softmax (SoS) on score matrix.
-    
-    Data after softmaxing has highly biased distribution, making it difficult to quantize with uniform quantization.
-    An elegant tradeoff between great majority of unimportant values and few crucial values is impossible under low bit quantization.
-    Therefore, we propose to split complete interval of (0, 1) into several smaller intervals and perform uniform quantization on each.
-    We could manually assgin or search for the best split point.
-    Currently, we only consider single split point scenarios, since this proves to be effective enough.
-
-    The algorithm no longer requires PTQSL on score matrix, and will ignore relevant parameters.
-
-    with proper hardware implementation, we don't need to use a sign bit anymore.
-    """
-    def __init__(self, A_bit=8, B_bit=8, mode="raw",
-                 metric="L2_norm", search_round=1, eq_alpha=0.1, eq_beta=2, eq_n=100, parallel_eq_n=10,
-                 n_G_A=1, n_V_A=1, n_H_A=1, n_G_B=1, n_V_B=1, n_H_B=1, init_layerwise=False,
-                 split=None):
-        super().__init__(A_bit=A_bit, B_bit=B_bit, mode=mode, 
-                         metric=metric, search_round=search_round, eq_alpha=eq_alpha, eq_beta=eq_beta, eq_n=eq_n, parallel_eq_n=parallel_eq_n, 
-                         n_G_A=n_G_A, n_V_A=n_V_A, n_H_A=n_H_A, n_G_B=n_G_B, n_V_B=n_V_B, n_H_B=n_H_B, init_layerwise=init_layerwise)
-        self.n_G_A = 1
-        self.n_V_A = 1
-        self.n_H_A = 1
-        self.A_qmax = 2**(self.A_bit-1) # well, still need it 
-        self.split = split
-        if split != None:
-            self.A_interval = self.split/(self.A_qmax-1)
-
-    def quant_input_A(self, x):
-        x_high = (x.clamp(self.split, 1)*(self.A_qmax-1)).round_().clamp_(0,self.A_qmax-1)/(self.A_qmax-1)
-        x_low = (x.clamp(0, self.split)/self.A_interval).round_().clamp_(0,self.A_qmax-1)*self.A_interval
-        return x_high + x_low
-
-    def _search_best_A_interval(self, A, B, split_candidates):
-        """
-        search for best split point
-        """
-        # out-of-loop optimization
-        A_ = A.unsqueeze(0)
-        # B_sim = self.quant_input_B(B).unsqueeze(0) # shape: 1,B,H,dim2,dim3
-        B_sim = B.unsqueeze(0)
-
-        similarities = []
-        for i in range(len(split_candidates)):
-            # quantize A
-            cur_A_interval = split_candidates[i]/(self.A_qmax-1)
-            A_high = (A_.clamp(split_candidates[i], 1)*(self.A_qmax-1)).round_().clamp_(0,self.A_qmax-1)/(self.A_qmax-1)
-            A_low =( A_.clamp(0, split_candidates[i])/cur_A_interval).round_().clamp_(0,self.A_qmax-1)*cur_A_interval
-            A_sim = A_high + A_low # shape: 1,B,H,S,S
-            # quantize B, this quantization is optimized out of loop
-            # calculate similarity and store them (dim1=dim2=S, dim3=W)
-            out_sim = A_sim @ B_sim # shape: 1,B,H,dim1,dim3
-            similarity = self._get_similarity(self.raw_out, out_sim, self.metric) # shape: parallel_eq_n,B,H,dim1
-            similarity = similarity.mean([1,2,3]) # shape: 1
-            similarities.append(similarity)
-        # calculate best similarity for this block
-        similarities = torch.cat(similarities, 0) # shape: eq_n
-        best_index = torch.argmax(similarities, dim=0, keepdim=False)
-        self.split = split_candidates[best_index]
-        self.A_interval = self.split/(self.A_qmax-1)
-        # debugging
-        # print(f"best split: {self.split}")
-
-    def _initialize_intervals(self, A, B):
-        # pad A and B for future quantization
-        self._get_padding_parameters(A, B)
-        B_pad = F.pad(B, [0,self.pad_cols_B,0,self.pad_rows_B,0,self.pad_groups_B]).unsqueeze(0).view(1,-1,self.n_G_B,self.crb_groups_B,self.n_V_B,self.crb_rows_B,self.n_H_B,self.crb_cols_B)
-
-        # initialize intervals with minmax intervals
-        self.split = 0.01
-        self.A_interval = self.split/(self.A_qmax-1)
-        if self.init_layerwise:
-            self.B_interval = (B.abs().max()/(self.B_qmax-0.5)).detach().view(1,1,1,1,1,1,1).repeat(1,self.n_G_B,1,self.n_V_B,1,self.n_H_B,1)
-        else:
-            self.B_interval=(B_pad.abs().amax([0,1,3,5,7], keepdim=True)/(self.B_qmax-0.5)).detach().squeeze(0) # shape: 1,n_G,1,n_V,1,n_H,1
-    
-    def calibration_step2(self, A, B):
-        # put raw outs/grads on GPU
-        self.raw_out = self.raw_out.unsqueeze(0).to(A.device)
-        self.raw_grad = self.raw_grad.to(A.device) if self.raw_grad != None else None
-
-        self._initialize_intervals(A, B)
-
-        # prepare weight intervals and similarities
-        A_split_candidates = torch.tensor([2**(-i) for i in range(20)]).cuda()
-        # split_eq_alpha, split_eq_beta, split_eq_n = 0.002, 0.03, 50
-        # A_split_candidates = torch.tensor([split_eq_alpha + (split_eq_beta- split_eq_alpha)*i/split_eq_n for i in range(split_eq_n + 1)]).cuda()
-        B_interval_candidates = torch.tensor([self.eq_alpha + i*(self.eq_beta - self.eq_alpha)/self.eq_n for i in range(self.eq_n + 1)]).cuda().view(-1,1,1,1,1,1,1,1) * self.B_interval.unsqueeze(0)
-
-        for e in range(self.search_round):
-            # search for best A interval
-            self._search_best_A_interval(A, B, A_split_candidates)
             # search for best B interval
             self._search_best_B_interval(A, B, B_interval_candidates)
 

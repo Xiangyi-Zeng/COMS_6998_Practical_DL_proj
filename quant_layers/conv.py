@@ -1,6 +1,3 @@
-from numpy import not_equal
-from torch import tensor
-from quant_layers.linear import MinMaxQuantLinear
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -84,41 +81,6 @@ class MinMaxQuantConv2d(nn.Conv2d):
         # step2: search for the best S^w and S^a of each layer
         self.w_interval=(self.weight.data.abs().max()/(self.w_qmax-0.5)).detach()
         self.a_interval=(x.abs().max()/(self.a_qmax-0.5)).detach()
-        self.calibrated=True
-        out=self.quant_forward(x)        
-        return out
-
-class QuantileQuantConv2d(MinMaxQuantConv2d):
-    """
-    Quantile quantize weight and output
-    """
-    def __init__(self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size,
-        stride = 1,
-        padding = 0,
-        dilation = 1,
-        groups: int = 1,
-        bias: bool = True,
-        padding_mode: str = 'zeros',
-        mode='raw',w_bit=8,a_bit=8,bias_bit=None,
-        w_quantile=0.9999,a_quantile=0.9999):
-        super().__init__(in_channels,out_channels,kernel_size,stride,padding,dilation,groups,bias,padding_mode,mode,w_bit,a_bit,bias_bit)
-        self.w_quantile = w_quantile
-        self.a_quantile = a_quantile
-
-    def _quantile(self, tensor, quantile):
-        if tensor.numel() >= 16777216:
-            n = tensor.numel()//16777216
-            return torch.quantile(tensor.view(-1)[:16777216*n].view(n,16777216),quantile,1).mean()
-        else:
-            return torch.quantile(tensor,quantile)
-
-    def calibration_step2(self,x):
-        # step2: search for the best S^w and S^o of each layer
-        self.w_interval=(self._quantile(self.weight.data.abs(),self.w_quantile)/(self.w_qmax-0.5)).detach()
-        self.a_interval=(self._quantile(x.abs(),self.a_quantile)/(self.a_qmax-0.5)).detach()
         self.calibrated=True
         out=self.quant_forward(x)        
         return out
@@ -277,7 +239,7 @@ class PTQSLQuantConv2d(MinMaxQuantConv2d):
         return out  
 
 class BatchingEasyQuantConv2d(PTQSLQuantConv2d):
-    """An agile implementation of Layerwise Easyquant"""
+    """An implementation of Layerwise Easyquant"""
     def __init__(self, in_channels: int,
         out_channels: int,
         kernel_size,
@@ -328,10 +290,7 @@ class BatchingEasyQuantConv2d(PTQSLQuantConv2d):
         """
         if metric == "cosine":
             similarity = F.cosine_similarity(tensor_raw, tensor_sim, dim=dim)
-        elif metric == "pearson":
-            # calculate similarity w.r.t complete feature map, but maintain dimension requirement
-            b, parallel_eq_n = tensor_sim.shape[0], tensor_sim.shape[1]
-            similarity = F.cosine_similarity(tensor_raw.view(b,1,-1), tensor_sim.view(b,parallel_eq_n,-1), dim=dim).view(b,parallel_eq_n,1,1)
+
         else:
             if metric == "L1_norm":
                 similarity = -torch.abs(tensor_raw - tensor_sim)

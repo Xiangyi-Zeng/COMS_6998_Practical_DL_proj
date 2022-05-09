@@ -1,4 +1,4 @@
-from quant_layers.conv import PTQSLQuantConv2d, ChannelwiseBatchingQuantConv2d
+from quant_layers.conv import ChannelwiseBatchingQuantConv2d
 from quant_layers.linear import PTQSLBatchingQuantLinear, PostGeluPTQSLBatchingQuantLinear
 from quant_layers.matmul import PTQSLBatchingQuantMatMul, SoSPTQSLBatchingQuantMatMul
 
