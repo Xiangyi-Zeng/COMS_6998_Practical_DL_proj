@@ -94,19 +94,19 @@ if __name__ == '__main__':
     img = get_image()
     for net_name in nets:
         quantized_model = get_quantized_model(net_name)
-        # #model size
-        # model_size = get_model_size(quantized_model.state_dict())
-        # model_size_dict[net_name] = model_size
+        #model size
+        model_size = get_model_size(quantized_model.state_dict())
+        model_size_dict[net_name] = model_size
         #inference time
         infer_time_1,infer_time_2 = get_inference_time(net_name,img)
         infer_time_dict[net_name]=[infer_time_1,infer_time_2]
-        # #test acc
-        # net = timm.create_model(net_name, pretrained=True)
-        # g=datasets.ViTImageNetLoaderGenerator('./data/imagenet','imagenet',32,32,2,kwargs={"model":net})
-        # test_loader=g.test_loader()
-        # test_acc =test_classification(quantized_model,test_loader)
-        # test_acc_dict[net_name] = test_acc
+        #test acc
+        net = timm.create_model(net_name, pretrained=True)
+        g=datasets.ViTImageNetLoaderGenerator('./data/imagenet','imagenet',32,32,2,kwargs={"model":net})
+        test_loader=g.test_loader()
+        test_acc =test_classification(quantized_model,test_loader)
+        test_acc_dict[net_name] = test_acc
 
     torch.save(infer_time_dict,'experimental_results/infer_time_pytorch.pt')
-    # torch.save(test_acc_dict,'experimental_results/Pytorch_test_acc.pt')
-    # torch.save(model_size_dict,'experimental_results/Pytorch_model_size.pt')
+    torch.save(test_acc_dict,'experimental_results/Pytorch_test_acc.pt')
+    torch.save(model_size_dict,'experimental_results/Pytorch_model_size.pt')
