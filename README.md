@@ -71,5 +71,9 @@ python3 test_examples/test_pytorch.py
 - We use onnx for pytorch to onnx and tensorflow SavedModel and tensorflow.JS for converting tensorflow SavedModel to web tfjs format
 - Live Demo of webapp [here](https://joey155.github.io/COMS_6998_Practical_DL_proj/index.html)
 
+## Deployment pipeline
+
+<img src="images/demo_flow.png" width="600" height="300">
+
 ## Acknowledgements
 We would like to thank the authors of **PTQ4ViT** framework and you can find their repo [here](https://github.com/hahnyuan/PTQ4ViT).
