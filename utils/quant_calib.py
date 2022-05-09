@@ -1,8 +1,7 @@
-from numpy import isin
 import torch
 from quant_layers.conv import MinMaxQuantConv2d
-from quant_layers.linear import MinMaxQuantLinear, PTQSLQuantLinear
-from quant_layers.matmul import MinMaxQuantMatMul, PTQSLQuantMatMul
+from quant_layers.linear import MinMaxQuantLinear
+from quant_layers.matmul import MinMaxQuantMatMul
 import torch.nn.functional as F
 from tqdm import tqdm
 

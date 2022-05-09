@@ -1,4 +1,3 @@
-from quant_layers.matmul import PTQSLBatchingQuantMatMul
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -246,93 +245,6 @@ class PTQSLQuantLinear(MinMaxQuantLinear):
         # prepare weight intervals and similarities
         weight_interval_candidates = torch.tensor([self.eq_alpha + i*(self.eq_beta - self.eq_alpha)/self.eq_n for i in range(self.eq_n + 1)]).cuda().view(-1,1,1,1,1) * self.w_interval.unsqueeze(0) # shape: eq_n,n_V,1,n_H,1
         input_interval_candidates =  torch.tensor([self.eq_alpha + i*(self.eq_beta - self.eq_alpha)/self.eq_n for i in range(self.eq_n + 1)]).cuda().view(1,1,-1) * self.a_interval.unsqueeze(-1) # shape: n_a,1,eq_n
-        for e in range(self.search_round):
-            # search for best weight interval
-            self._search_best_w_interval(x, weight_interval_candidates, raw_out_expanded_chunked)
-            # search for best input interval
-            self._search_best_a_interval(x, input_interval_candidates, raw_out_expanded)
-
-        self.raw_grad = self.raw_grad.to("cpu") if self.raw_grad != None else None
-
-        self.calibrated = True
-        out=self._bias_correction_quant_forward(x)
-        del self.raw_input, self.raw_out, self.raw_grad
-        return out    
-
-class PostGeluPTQSLQuantLinear(PTQSLQuantLinear):
-    def __init__(self, 
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        mode = "raw",
-        w_bit = 8,
-        a_bit = 8,
-        bias_bit = None,
-        bias_correction = False,
-        metric="L2_norm", search_round=1, eq_alpha=0, eq_beta=1, eq_n=100, parallel_eq_n=10, n_H=1, n_V=1, n_a=1, init_layerwise=False):
-        super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit, bias_bit=bias_bit, bias_correction=bias_correction,
-                         metric=metric, search_round=search_round, eq_alpha=eq_alpha, eq_beta=eq_beta, eq_n=eq_n, parallel_eq_n=parallel_eq_n, n_H=n_H, n_V=n_V, n_a=n_a, init_layerwise=init_layerwise)
-    
-    def quant_input(self, x):
-        """
-        self.a_interval = [a_interval_pos, a_interval_neg]
-        """
-        # self.a_interval[0] shape: n_a,1
-        # self.a_interval[1] shape: 1
-        x_=torch.cat(torch.chunk(x.unsqueeze(-2), chunks=self.n_a, dim=-1), dim=-2)
-        x_pos=(x_/(self.a_interval[0])).round_().clamp_(0,self.a_qmax-1).mul_(self.a_interval[0])
-        x_neg=(x_/(self.a_interval[1])).round_().clamp_(-self.a_qmax,0).mul_(self.a_interval[1])
-        return (x_pos + x_neg).reshape_as(x)
-
-    def _search_best_a_interval(self, x, input_interval_candidates, raw_out_expanded):
-        tmp_a_interval = self.a_interval[0].unsqueeze(-1) # shape: n_a,1,1
-        for a in range(self.n_a):
-            similarities = []
-            for p_st in range(0,self.eq_n,self.parallel_eq_n):
-                p_ed = min(self.eq_n, p_st+self.parallel_eq_n)
-                cur_a_interval = tmp_a_interval.repeat(1,1,p_ed-p_st) # shape: n_a,1,parallel_eq_n
-                cur_a_interval[a:a+1,:,:] = input_interval_candidates[a:a+1,:,p_st:p_ed]
-                # quantize weight and bias 
-                w_sim, bias_sim = self.quant_weight_bias()
-                # quantize input
-                x_sim=torch.cat(torch.chunk(x.unsqueeze(-2), chunks=self.n_a, dim=-1), dim=-2).unsqueeze(-1)
-                x_pos=(x_sim/(cur_a_interval)).round_().clamp_(0,self.a_qmax-1)*(cur_a_interval) # shape: B,*,n_a,crb_acts,parallel_eq_n
-                x_neg=(x_sim/(self.a_interval[1])).round_().clamp_(-self.a_qmax,0)*(self.a_interval[1]) # shape: B,*,n_a,crb_acts,1
-                x_sim = (x_pos + x_neg).permute(*list(range(len(x_sim.shape)-3)),-1,-3,-2).reshape(*x.shape[:-1],p_ed-p_st,x.shape[-1]) # shape: B,*,parallel_eq_n,ic
-                # calculate similarity and store them
-                out_sim = F.linear(x_sim, w_sim, bias_sim) # shape: B,*,parallel_eq_n,oc
-                similarity = self._get_similarity(raw_out_expanded, out_sim, self.metric) # shape: B,*,parallel_eq_n
-                similarity = torch.mean(similarity, dim=list(range(len(similarity.shape)-1))) # shape: parallel_eq_n
-                similarities.append(similarity)
-            # store best input interval and store in tmp_a_interval
-            similarities = torch.cat(similarities, dim=0) # shape: eq_n
-            a_best_index = similarities.argmax(dim=0, keepdim=True).reshape(1,1,-1)
-            tmp_a_interval[a:a+1,:,:] = torch.gather(input_interval_candidates[a:a+1,:,:],dim=2,index=a_best_index)
-        self.a_interval[0] = tmp_a_interval.squeeze(-1)
-
-    def _initialize_intervals(self, x):
-        if self.init_layerwise:
-            self.w_interval=((self.weight.abs().max())/(self.w_qmax-0.5)).view(1,1,1,1).repeat(self.n_V,1,self.n_H,1)
-            self.a_interval=[(x.max()/(self.a_qmax-0.5)).detach().view(1,1).repeat(self.n_a,1)]
-        else:
-            self.w_interval=(self.weight.view(self.n_V,self.crb_rows,self.n_H,self.crb_cols).abs().amax([1,3],keepdim=True)/(self.w_qmax-0.5))
-            self.a_interval=[((x.view(*x.shape[:-1],self.n_a,self.crb_acts).amax(list(range(len(x.shape)-1))+[-1],keepdim=False))/(self.a_qmax-0.5)).unsqueeze(-1)]
-        self.a_interval.append(0.16997124254703522/self.a_qmax)
-
-    def calibration_step2(self,x):
-        # initialize intervals with minmax intervals
-        self._initialize_intervals(x)
-
-        # put raw outs on GPU
-        raw_out_expanded = self.raw_out.to(x.device).unsqueeze(-2)  # shape: B,*,1,oc
-        raw_out_expanded_chunked = torch.cat(torch.chunk(raw_out_expanded.unsqueeze(-2), chunks=self.n_V, dim=-1), dim=-2) # shape: B,*,1,n_V,crb_rows
-
-        # put raw grad on GPU
-        self.raw_grad = self.raw_grad.to(x.device) if self.raw_grad != None else None
-
-        # prepare weight intervals and similarities
-        weight_interval_candidates = torch.tensor([self.eq_alpha + i*(self.eq_beta - self.eq_alpha)/self.eq_n for i in range(self.eq_n + 1)]).cuda().view(-1,1,1,1,1) * self.w_interval.unsqueeze(0) # shape: eq_n,n_V,1,n_H,1
-        input_interval_candidates =  torch.tensor([self.eq_alpha + i*(self.eq_beta - self.eq_alpha)/self.eq_n for i in range(self.eq_n + 1)]).cuda().view(1,1,-1) * self.a_interval[0].unsqueeze(-1) # shape: n_a,1,eq_n
         for e in range(self.search_round):
             # search for best weight interval
             self._search_best_w_interval(x, weight_interval_candidates, raw_out_expanded_chunked)

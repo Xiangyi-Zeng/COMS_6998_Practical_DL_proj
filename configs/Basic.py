@@ -1,6 +1,6 @@
-from quant_layers.conv import PTQSLQuantConv2d, BatchingEasyQuantConv2d
-from quant_layers.linear import PTQSLBatchingQuantLinear, PostGeluPTQSLBatchingQuantLinear
-from quant_layers.matmul import PTQSLBatchingQuantMatMul, SoSPTQSLBatchingQuantMatMul
+from quant_layers.conv import BatchingEasyQuantConv2d
+from quant_layers.linear import PTQSLBatchingQuantLinear
+from quant_layers.matmul import PTQSLBatchingQuantMatMul
 
 bit = 8
 conv_fc_name_list = ["qconv", "qlinear_qkv", "qlinear_proj", "qlinear_MLP_1", "qlinear_MLP_2", "qlinear_classifier", "qlinear_reduction"]

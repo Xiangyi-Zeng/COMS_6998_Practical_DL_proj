@@ -2,25 +2,13 @@
 Reuse version v4
 Author: Hahn Yuan
 """
-import PIL
 import torch
-import argparse
 import numpy as np
 import os
 import copy
 import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-from torchvision.datasets import ImageFolder,DatasetFolder
+from torchvision.datasets import ImageFolder
 import torch.utils.data
-import re
-import warnings
-from PIL import Image
-from PIL import ImageFile
-import random
-import torch.nn.functional as F
-from torch.utils.data import Dataset
-import timm
-from timm.models.vision_transformer import VisionTransformer
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 
