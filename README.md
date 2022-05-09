@@ -69,7 +69,7 @@ python3 test_examples/test_pytorch.py
 
 - For demonstration, we show a simple web app for image classification using both quantized and non-quantized versions of ViT_b_16. 
 - We use onnx for pytorch to onnx and tensorflow SavedModel and tensorflow.JS for converting tensorflow SavedModel to web tfjs format
-- Live Demo of webapp [here](https://https://xiangyi-zeng.github.io/COMS_6998_Practical_DL_proj/index.html)
+- Live Demo of webapp [here](https://xiangyi-zeng.github.io/COMS_6998_Practical_DL_proj/index.html)
 
 ## Deployment pipeline
 
