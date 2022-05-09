@@ -57,7 +57,8 @@ $(document).ready(async function () {
         $('#result').fadeIn(600) //.text(result[0].className + '  -   ' + result[0].probability.toFixed(3));
         for (let idx = 0; idx < results.length; idx++) {
             let item = $("<div id='prediction'></div>")
-            item.html("<p>"+`Prediction: ${results[idx]["className"]} - confidence(${results[idx]["probability"].toFixed(3)})`+"</p>")
+//             item.html("<p>"+`Prediction: ${results[idx]["className"]} - confidence(${results[idx]["probability"].toFixed(3)})`+"</p>")
+            item.html("<p>"+`Prediction: ${results[idx]["className"]} - confidence(${results[idx]["probability"]})`+"</p>")
             $('#result').append(item)
         }
     }
