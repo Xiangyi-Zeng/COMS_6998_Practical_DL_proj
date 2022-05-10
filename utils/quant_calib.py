@@ -1,3 +1,4 @@
+## Derive from PTQ4ViT framework
 import torch
 from quant_layers.conv import MinMaxQuantConv2d
 from quant_layers.linear import MinMaxQuantLinear
